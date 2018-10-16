@@ -1,4 +1,2 @@
-Options +FollowSymLinks
-RewriteEngine On
-
-RewriteRule ^(.*)$ /api.py [L,QSA]
+ssengerEnabled On
+PassengerPython /home/d/deniatest/.local/bin/python3
