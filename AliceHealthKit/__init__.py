@@ -5,6 +5,7 @@ from __future__ import unicode_literals
 # Импортируем модули для работы с JSON и логами.
 import json
 import logging
+import Database
 
 # Импортируем подмодули Flask для запуска веб-сервиса.
 from flask import Flask, request
@@ -104,3 +105,19 @@ def get_suggests(user_id):
         })
 
     return suggests
+
+
+@app.route("/test", methods=['GET'])
+def test():
+    database = Database.connect()
+
+    string = database.get_item('SELECT * FROM `Symptoms`')
+
+    print(string)
+
+    return json.dumps(
+        "hello world",
+        ensure_ascii=False,
+        indent=2
+    )
+
