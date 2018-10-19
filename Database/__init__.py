@@ -10,12 +10,16 @@ class Database(object):
             if connection_config is None:
                 connection_config = read_db_config()
 
+            print(connection_config)
+
             self.host = connection_config["host"]
             self.database_name = connection_config["database"]
             self.user = connection_config["user"]
             self.password = connection_config["password"]
 
-            self.connection = self.connect()
+            self.connection = None
+
+            self.connect()
 
         def connect(self):
             try:
@@ -27,7 +31,7 @@ class Database(object):
                 )
 
                 if connection.is_connected():
-                    return connection
+                    self.connection = connection
 
             except Error as e:
                 print(e)
@@ -36,21 +40,35 @@ class Database(object):
             if self.connection is not None:
                 return self.connection.close()
 
-        def get_item(self, sql: str):
+        def get_item(self, sql: str, var: tuple = ()):
             if not self.connection.is_connected():
-                return {}
-
-            cursor = self.connection.cursor()
-            cursor.execute(sql)
+                self.connect()
+            cursor = self.connection.cursor(dictionary=True)
+            cursor.execute(sql, var)
             return cursor.fetchone()
 
-        def get_all(self, sql: str):
+        def get_all(self, sql: str, var: tuple = ()):
             if not self.connection.is_connected():
-                return {}
+                self.connect()
 
-            cursor = self.connection.cursor()
-            cursor.execute(sql)
+            cursor = self.connection.cursor(dictionary=True)
+            cursor.execute(sql, var)
             return cursor.fetchall()
+
+        def query(self, sql: str, var: tuple = ()):
+            if not self.connection.is_connected():
+                self.connect()
+
+            cursor = self.connection.cursor(dictionary=True)
+            cursor.execute(sql, var)
+            if cursor.lastrowid:
+                inserted_id = cursor.lastrowid
+            else:
+                inserted_id = 0
+
+            self.connection.commit()
+
+            return inserted_id
 
         def __del__(self):
             self.disconnect()
