@@ -31,7 +31,6 @@ database = Database.connect()
 
 # Задаем параметры приложения Flask.
 @app.route("/", methods=['POST'])
-# Функция получает тело запроса и возвращает ответ.
 def main():
     logging.info('Start')
     request_json = request.get_json(force=True)
@@ -79,7 +78,8 @@ def handle_dialog(req, res):
         logging.info('new user')
         # Это новый пользователь.
         # Инициализируем сессию и поприветствуем его.
-        res['response']['text'] = 'Привет! Я твой домашний доктор! Я помогу тебе с твоим недугом!'
+        res['response']['text'] = 'Привет! Я твой домашний доктор! Что с вами случилось?'
+        res['response']['tts'] = 'Привет! Я твой домашний доктор! Что с вами случилось?'
         res['response']['buttons'] = get_init_phrases(user_id)
         save_session(user_id)
         logging.info('end')
@@ -91,12 +91,39 @@ def handle_dialog(req, res):
 
     # Обрабатываем ответ пользователя.
     user_answer = req['request']['original_utterance'].lower()
-    print(user_answer)
+    print(session['stage'])
     if session['stage'] == 1:
         symptom_id = get_symptom_id_by_init_phrase(user_id, user_answer)
         print(symptom_id)
-        statement = get_symptom_statement(user_id, symptom_id, 0, '')
-        print(statement)
+        if not symptom_id:
+            init_phrases = try_find_init_phrase(user_id, req['request']['nlu']['tokens'])
+            print(init_phrases)
+            if init_phrases:
+                response_text = 'Не могу найти симптом, возможно вы имели ввиду что-то из этого?'
+                session_end = False
+                print(response_text)
+                buttons = [
+                    {'title': init_phrase['PhraseBody'], 'hide': True}
+                    for init_phrase in init_phrases[:2]
+                ]
+            else:
+                response_text = 'Не могу понять, что с вами, попробуйте перефразировать.'
+                print(response_text)
+                session_end = False
+                buttons = []
+        else:
+            statement = get_symptom_statement(user_id, symptom_id, 0, '')
+            if statement:
+                response_text = statement['StatementBody']
+                session_end = False
+                buttons = [
+                    {'title': 'Да', 'hide': False},
+                    {'title': 'Нет', 'hide': False},
+                ]
+            else:
+                response_text = 'Что-то пошло не так! Попробуйте запустить навык заново!'
+                session_end = True
+                buttons = []
     elif session['stage'] == 2:
         allowed_answers = [
             'да',
@@ -105,14 +132,47 @@ def handle_dialog(req, res):
         statement = {}
         if user_answer in allowed_answers:
             statement = get_symptom_statement(user_id, session['symptom_id'], session['this_statement'], user_answer)
-    else:
-        statement = {}
 
-    res['response']['text'] = statement['StatementBody']
-    res['response']['buttons'] = [
-        'Да',
-        'Нет',
-    ]
+        print(statement)
+        if statement:
+            print(statement['TypeID'])
+            print(statement['TypeID'] == 3)
+            if statement['TypeID'] == 1:
+                buttons = [
+                    {'title': 'Да', 'hide': False},
+                    {'title': 'Нет', 'hide': False},
+                ]
+                session_end = False
+                response_text = statement['StatementBody']
+            elif statement['TypeID'] == 2:
+                buttons = {}
+                session_end = True
+                response_text = statement['StatementBody']
+            elif statement['TypeID'] == 3:
+                print(statement['NextSymptomID'])
+                sessionStorage[user_id]['symptom_id'] = statement['NextSymptomID']
+                statement = get_symptom_statement(user_id, statement['NextSymptomID'], 0, '')
+                print(statement)
+                buttons = [
+                    {'title': 'Да', 'hide': False},
+                    {'title': 'Нет', 'hide': False},
+                ]
+                session_end = False
+                response_text = statement['StatementBody']
+        else:
+            response_text = 'Что-то пошло не так! Попробуйте еще раз!'
+            session_end = True
+            buttons = []
+    else:
+        response_text = 'Что-то пошло не так! Попробуйте еще раз!'
+        session_end = True
+        buttons = []
+
+    res['response']['text'] = response_text
+    res['response']['tts'] = response_text
+    if buttons:
+        res['response']['buttons'] = buttons
+    res['response']['end_session'] = session_end
 
     save_session(user_id)
 
@@ -134,11 +194,16 @@ def get_init_phrases(user_id):
 
 
 def get_symptom_id_by_init_phrase(user_id, init_phrase):
+    print(init_phrase)
     symptom_info = database.get_item(
         "select SymptomID from `InitPhrases` p where lower(p.PhraseBody) = %s", (init_phrase,))
-    symptom_id = symptom_info['SymptomID']
-    sessionStorage[user_id]['symptom_id'] = symptom_id
-    return symptom_id
+    print(symptom_info)
+    if symptom_info:
+        symptom_id = symptom_info['SymptomID']
+        sessionStorage[user_id]['symptom_id'] = symptom_id
+        return symptom_id
+    else:
+        return False
 
 
 def get_symptom_statement(user_id, symptom_id, this_statement=0, user_answer=''):
@@ -150,7 +215,7 @@ def get_symptom_statement(user_id, symptom_id, this_statement=0, user_answer='')
                                       "from Symptoms S "
                                       "inner join Statements St on S.StartFromStatmentID = St.StatementID "
                                       "where S.SymptomID = %s", (str(symptom_id),))
-        sessionStorage[user_id]['this_statement'] = statement['StatementID']
+
     elif this_statement != 0 and user_answer != '':
         if user_answer == 'да':
             statement = database.get_item("select St.* "
@@ -162,9 +227,11 @@ def get_symptom_statement(user_id, symptom_id, this_statement=0, user_answer='')
                                           "from Statements S "
                                           "inner join Statements St on S.NextOnFalseStatementID = St.StatementID "
                                           "where S.StatementID = %s", (str(this_statement),))
+    if statement:
         sessionStorage[user_id]['this_statement'] = statement['StatementID']
-
-    return statement
+        return statement
+    else:
+        return False
 
 
 # Функция возвращает две подсказки для ответа.
@@ -185,6 +252,37 @@ def save_session(user_id):
     else:
         sql = "update UserSessions set " + sql_vars_str
     database.query(sql)
+
+
+def try_find_init_phrase(user_id, user_answer_by_words):
+    suppose_symptoms = []
+    print(user_answer_by_words)
+    print(len(user_answer_by_words))
+    if len(user_answer_by_words) < 5:
+        for word in user_answer_by_words:
+            print(word)
+            if len(word) > 2:
+                compare_str = '"%' + word + '%"'
+                print(compare_str)
+                init_phrase_temp = database.get_item("select SymptomID from InitPhrases where PhraseBody like " + compare_str)
+                print(init_phrase_temp)
+                if init_phrase_temp:
+                    suppose_symptoms.append(init_phrase_temp)
+
+        if suppose_symptoms:
+            my_map = {}
+            for entry in suppose_symptoms:
+                try:
+                    my_map[entry['SymptomID']] += 1
+                except KeyError:
+                    my_map[entry['SymptomID']] = 1
+
+            symptom_id = max(my_map, key=my_map.get)
+            print(symptom_id)
+            if symptom_id:
+                return database.get_all("select * from InitPhrases where SymptomID = %s", (symptom_id,))
+
+    return False
 
 
 @app.route("/test", methods=['GET'])
