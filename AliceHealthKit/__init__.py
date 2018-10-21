@@ -212,11 +212,11 @@ def get_symptom_id_by_init_phrase(user_id, init_phrase):
     symptom_info = database.get_item(
         "select SymptomID from `InitPhrases` p where lower(p.PhraseBody) = %s", (init_phrase,))
     print(symptom_info)
-    if symptom_info:
+    try:
         symptom_id = symptom_info['SymptomID']
         sessionStorage[user_id]['symptom_id'] = symptom_id
         return symptom_id
-    else:
+    except Exception:
         return False
 
 
@@ -278,23 +278,36 @@ def try_find_init_phrase(user_id, user_answer_by_words):
             if len(word) > 2:
                 compare_str = '"%' + word + '%"'
                 print(compare_str)
-                init_phrase_temp = database.get_item("select SymptomID from InitPhrases where PhraseBody like " + compare_str)
+                init_phrase_temp = database.get_all("select SymptomID from InitPhrases where PhraseBody like " + compare_str)
+                print("я")
                 print(init_phrase_temp)
                 if init_phrase_temp:
-                    suppose_symptoms.append(init_phrase_temp)
-
+                    for item in init_phrase_temp:
+                        suppose_symptoms.append(item)
+        print(suppose_symptoms)
         if suppose_symptoms:
-            my_map = {}
+            symptoms_frequency = {}
             for entry in suppose_symptoms:
+                print(entry)
                 try:
-                    my_map[entry['SymptomID']] += 1
+                    symptoms_frequency[entry['SymptomID']] += 1
                 except KeyError:
-                    my_map[entry['SymptomID']] = 1
+                    symptoms_frequency[entry['SymptomID']] = 1
 
-            symptom_id = max(my_map, key=my_map.get)
-            print(symptom_id)
-            if symptom_id:
-                return database.get_all("select * from InitPhrases where SymptomID = %s order by rand() limit 1", (symptom_id,))
+            print(symptoms_frequency)
+            max_value = max(symptoms_frequency.values())
+            print(max_value)
+            symptoms = [k for k, v in symptoms_frequency.items() if v == max_value]
+            print(symptoms)
+            if symptoms:
+                variables = ','.join(['%s' for _ in range(0, len(symptoms))])
+                return database.get_all("select * "
+                                        "from InitPhrases "
+                                        "where SymptomID in (" + variables + ") "
+                                        "group by SymptomID "
+                                        "order by rand() "
+                                        "limit 3",
+                                        tuple(symptoms))
 
     return False
 

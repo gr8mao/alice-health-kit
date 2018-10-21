@@ -52,6 +52,7 @@ class Database(object):
                 self.connect()
 
             cursor = self.connection.cursor(dictionary=True)
+            print([sql, var])
             cursor.execute(sql, var)
             return cursor.fetchall()
 
