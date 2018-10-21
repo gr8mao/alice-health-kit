@@ -1,2 +1,6 @@
 PassengerEnabled On
 PassengerPython /home/g/gr8maort/.local/bin/python3
+
+<FilesMatch ".(py)$">
+  Header unset Cache-Control
+</FilesMatch>
