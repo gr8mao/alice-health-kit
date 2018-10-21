@@ -100,6 +100,7 @@ def handle_dialog(req, res):
             print(init_phrases)
             if init_phrases:
                 response_text = 'Не могу найти симптом, возможно вы имели ввиду что-то из этого?'
+                response_speech = 'Не могу найти симптом, возможно вы имели ввиду что-то из этого?'
                 session_end = False
                 print(response_text)
                 buttons = [
@@ -108,6 +109,7 @@ def handle_dialog(req, res):
                 ]
             else:
                 response_text = 'Не могу понять, что с вами, попробуйте перефразировать.'
+                response_speech = 'Не могу понять, что с вами, попробуйте перефразировать.'
                 print(response_text)
                 session_end = False
                 buttons = []
@@ -115,6 +117,7 @@ def handle_dialog(req, res):
             statement = get_symptom_statement(user_id, symptom_id, 0, '')
             if statement:
                 response_text = statement['StatementBody']
+                response_speech = statement['StatementSpeech']
                 session_end = False
                 buttons = [
                     {'title': 'Да', 'hide': False},
@@ -122,6 +125,7 @@ def handle_dialog(req, res):
                 ]
             else:
                 response_text = 'Что-то пошло не так! Попробуйте запустить навык заново!'
+                response_speech = 'Что-то пошло не так! Попробуйте запустить навык заново!'
                 session_end = True
                 buttons = []
     elif session['stage'] == 2:
@@ -129,47 +133,57 @@ def handle_dialog(req, res):
             'да',
             'нет',
         ]
-        statement = {}
+
         if user_answer in allowed_answers:
             statement = get_symptom_statement(user_id, session['symptom_id'], session['this_statement'], user_answer)
 
-        print(statement)
-        if statement:
-            print(statement['TypeID'])
-            print(statement['TypeID'] == 3)
-            if statement['TypeID'] == 1:
-                buttons = [
-                    {'title': 'Да', 'hide': False},
-                    {'title': 'Нет', 'hide': False},
-                ]
-                session_end = False
-                response_text = statement['StatementBody']
-            elif statement['TypeID'] == 2:
-                buttons = {}
+            print(statement)
+            if statement:
+                print(statement['TypeID'])
+                print(statement['TypeID'] == 3)
+                if statement['TypeID'] == 1:
+                    buttons = [
+                        {'title': 'Да', 'hide': False},
+                        {'title': 'Нет', 'hide': False},
+                    ]
+                    session_end = False
+                    response_text = statement['StatementBody']
+                    response_speech = statement['StatementSpeech']
+                elif statement['TypeID'] == 2:
+                    buttons = {}
+                    session_end = True
+                    response_text = statement['StatementBody']
+                    response_speech = statement['StatementSpeech']
+                elif statement['TypeID'] == 3:
+                    print(statement['NextSymptomID'])
+                    sessionStorage[user_id]['symptom_id'] = statement['NextSymptomID']
+                    statement = get_symptom_statement(user_id, statement['NextSymptomID'], 0, '')
+                    print(statement)
+                    buttons = [
+                        {'title': 'Да', 'hide': False},
+                        {'title': 'Нет', 'hide': False},
+                    ]
+                    session_end = False
+                    response_text = statement['StatementBody']
+                    response_speech = statement['StatementSpeech']
+            else:
+                response_text = 'Не удалось найти следующий этап. Попробуйте снова!'
+                response_speech = 'Не удалось найти следующий этап. Попробуйте снова!'
                 session_end = True
-                response_text = statement['StatementBody']
-            elif statement['TypeID'] == 3:
-                print(statement['NextSymptomID'])
-                sessionStorage[user_id]['symptom_id'] = statement['NextSymptomID']
-                statement = get_symptom_statement(user_id, statement['NextSymptomID'], 0, '')
-                print(statement)
-                buttons = [
-                    {'title': 'Да', 'hide': False},
-                    {'title': 'Нет', 'hide': False},
-                ]
-                session_end = False
-                response_text = statement['StatementBody']
+                buttons = []
         else:
-            response_text = 'Что-то пошло не так! Попробуйте еще раз!'
-            session_end = True
-            buttons = []
+            buttons = {}
+            session_end = False
+            response_text = "На этом этапе следует отвечать только Да или Нет."
+            response_speech = "На этом этапе следует отвечать только Да или Нет."
     else:
-        response_text = 'Что-то пошло не так! Попробуйте еще раз!'
+        response_text = 'Как вы здесь оказались?!'
+        response_speech = 'Как вы здесь оказались?!'
         session_end = True
         buttons = []
 
     res['response']['text'] = response_text
-    res['response']['tts'] = response_text
+    res['response']['tts'] = response_speech
     if buttons:
         res['response']['buttons'] = buttons
     res['response']['end_session'] = session_end
@@ -280,7 +294,7 @@ def try_find_init_phrase(user_id, user_answer_by_words):
             symptom_id = max(my_map, key=my_map.get)
             print(symptom_id)
             if symptom_id:
-                return database.get_all("select * from InitPhrases where SymptomID = %s", (symptom_id,))
+                return database.get_all("select * from InitPhrases where SymptomID = %s order by rand() limit 1", (symptom_id,))
 
     return False
 
