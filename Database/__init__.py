@@ -4,21 +4,16 @@ from configparser import ConfigParser
 
 
 class Database(object):
-
         def __init__(self, connection_config=None):
 
             if connection_config is None:
                 connection_config = read_db_config()
 
-            print(connection_config)
-
             self.host = connection_config["host"]
             self.database_name = connection_config["database"]
             self.user = connection_config["user"]
             self.password = connection_config["password"]
-
             self.connection = None
-
             self.connect()
 
         def connect(self):
@@ -52,7 +47,6 @@ class Database(object):
                 self.connect()
 
             cursor = self.connection.cursor(dictionary=True)
-            print([sql, var])
             cursor.execute(sql, var)
             return cursor.fetchall()
 
