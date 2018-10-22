@@ -6,6 +6,8 @@ from __future__ import unicode_literals
 import json
 import logging
 import Database
+import time
+import random
 
 # Импортируем подмодули Flask для запуска веб-сервиса.
 from flask import Flask, request
@@ -28,13 +30,38 @@ sessionKeyToLog = [
 ]
 database = Database.connect()
 
+# Наборы фраз для ответов
+thanksPhrases = [
+    {'Body': 'И это все! Попробуйте снова, если у вас остались какие-то впросы'},
+    {'Body': 'Помогла, чем смогла, дальше дело за вами!'},
+    {'Body': 'Не стоит благодарности, это моя работа.'},
+    {'Body': 'Всегда рада вам помочь!'},
+    {'Body': 'На этом все! Большое спасибо, что воспользвадись мной!'},
+    {'Body': 'Мне больше нечем вам помочь. Спасибо за ваш интерес!'},
+]
+
+onlyYesOrNoPhrases = [
+    {'Body': 'Отвечайте, пожалуйста, только Да или Нет.'},
+    {'Body': 'Отвечая Да или Нет, вы приближайетесь к результату!'},
+    {'Body': 'Не могу понять. Наверное вы не отвечаете на вопросы не так?'},
+    {'Body': 'Пожалуйста, отвечайте только Да или Нет.'},
+    {'Body': 'Да или Нет, только так и никак иначе!'},
+    {'Body': 'Пожалуйста, используйте только Да и Нет в ответах.'},
+]
+
+greetingsPhrases = [
+    {'Body': 'Доброго времени суток! Что с вами случилось?'},
+    {'Body': 'Привет! Я ваш домашний доктор, что с вами не так?'},
+    {'Body': 'Приветствую! Вас что-то  беспокоит?'},
+    {'Body': 'Привет! С вами говорит ваш домашний советчик, что с вами случилось?'},
+]
+
 
 # Задаем параметры приложения Flask.
 @app.route("/", methods=['POST'])
 def main():
     logging.info('Start')
     request_json = request.get_json(force=True)
-    print(request_json)
     logging.info('Request: %r', request_json)
 
     response = {
@@ -78,41 +105,48 @@ def handle_dialog(req, res):
         logging.info('new user')
         # Это новый пользователь.
         # Инициализируем сессию и поприветствуем его.
-        res['response']['text'] = 'Привет! Я твой домашний доктор! Что с вами случилось?'
-        res['response']['tts'] = 'Привет! Я твой домашний доктор! Что с вами случилось?'
+        greetings_phrase = random.choice(greetingsPhrases)
+        res['response']['text'] = greetings_phrase['Body']
+        res['response']['tts'] = greetings_phrase['Body']
         res['response']['buttons'] = get_init_phrases(user_id)
         save_session(user_id)
         logging.info('end')
         return
 
+    try:
+        rough_language = req['request']['markup']['dangerous_context']
+    except KeyError:
+        rough_language = False
+
     session = sessionStorage[user_id]
-    print(session)
     logging.info('session: %r', session)
 
     # Обрабатываем ответ пользователя.
     user_answer = req['request']['original_utterance'].lower()
-    print(session['stage'])
     if session['stage'] == 1:
         symptom_id = get_symptom_id_by_init_phrase(user_id, user_answer)
-        print(symptom_id)
         if not symptom_id:
             init_phrases = try_find_init_phrase(user_id, req['request']['nlu']['tokens'])
-            print(init_phrases)
             if init_phrases:
                 response_text = 'Не могу найти симптом, возможно вы имели ввиду что-то из этого?'
                 response_speech = 'Не могу найти симптом, возможно вы имели ввиду что-то из этого?'
                 session_end = False
-                print(response_text)
                 buttons = [
                     {'title': init_phrase['PhraseBody'], 'hide': True}
                     for init_phrase in init_phrases[:2]
                 ]
             else:
-                response_text = 'Не могу понять, что с вами, попробуйте перефразировать.'
-                response_speech = 'Не могу понять, что с вами, попробуйте перефразировать.'
-                print(response_text)
-                session_end = False
-                buttons = []
+                response_on_special = get_answer_on_user_response(user_id, req['request']['nlu']['tokens'], rough_language)
+                if response_on_special:
+                    response_text = response_on_special['Body']
+                    response_speech = response_on_special['Body']
+                    session_end = False
+                    buttons = []
+                else:
+                    response_text = 'Не могу понять, что с вами, попробуйте перефразировать.'
+                    response_speech = 'Не могу понять, что с вами, попробуйте перефразировать.'
+                    session_end = False
+                    buttons = []
         else:
             statement = get_symptom_statement(user_id, symptom_id, 0, '')
             if statement:
@@ -136,11 +170,7 @@ def handle_dialog(req, res):
 
         if user_answer in allowed_answers:
             statement = get_symptom_statement(user_id, session['symptom_id'], session['this_statement'], user_answer)
-
-            print(statement)
             if statement:
-                print(statement['TypeID'])
-                print(statement['TypeID'] == 3)
                 if statement['TypeID'] == 1:
                     buttons = [
                         {'title': 'Да', 'hide': False},
@@ -154,11 +184,10 @@ def handle_dialog(req, res):
                     session_end = True
                     response_text = statement['StatementBody']
                     response_speech = statement['StatementSpeech']
+                    sessionStorage[user_id]['stage'] = 3
                 elif statement['TypeID'] == 3:
-                    print(statement['NextSymptomID'])
                     sessionStorage[user_id]['symptom_id'] = statement['NextSymptomID']
                     statement = get_symptom_statement(user_id, statement['NextSymptomID'], 0, '')
-                    print(statement)
                     buttons = [
                         {'title': 'Да', 'hide': False},
                         {'title': 'Нет', 'hide': False},
@@ -172,10 +201,17 @@ def handle_dialog(req, res):
                 session_end = True
                 buttons = []
         else:
+            text = random.choice(onlyYesOrNoPhrases)
             buttons = {}
             session_end = False
-            response_text = "На этом этапе следует отвечать только Да или Нет."
-            response_speech = "На этом этапе следует отвечать только Да или Нет."
+            response_text = text['Body']
+            response_speech = text['Body']
+    elif session['stage'] == 3:
+        text = random.choice(thanksPhrases)
+        response_text = text['Body']
+        response_speech = text['Body']
+        session_end = True
+        buttons = []
     else:
         response_text = 'Как вы здесь оказались?!'
         response_speech = 'Как вы здесь оказались?!'
@@ -208,15 +244,13 @@ def get_init_phrases(user_id):
 
 
 def get_symptom_id_by_init_phrase(user_id, init_phrase):
-    print(init_phrase)
     symptom_info = database.get_item(
         "select SymptomID from `InitPhrases` p where lower(p.PhraseBody) = %s", (init_phrase,))
-    print(symptom_info)
     try:
         symptom_id = symptom_info['SymptomID']
         sessionStorage[user_id]['symptom_id'] = symptom_id
         return symptom_id
-    except Exception:
+    except TypeError:
         return False
 
 
@@ -270,35 +304,23 @@ def save_session(user_id):
 
 def try_find_init_phrase(user_id, user_answer_by_words):
     suppose_symptoms = []
-    print(user_answer_by_words)
-    print(len(user_answer_by_words))
     if len(user_answer_by_words) < 5:
         for word in user_answer_by_words:
-            print(word)
             if len(word) > 2:
                 compare_str = '"%' + word + '%"'
-                print(compare_str)
                 init_phrase_temp = database.get_all("select SymptomID from InitPhrases where PhraseBody like " + compare_str)
-                print("я")
-                print(init_phrase_temp)
                 if init_phrase_temp:
                     for item in init_phrase_temp:
                         suppose_symptoms.append(item)
-        print(suppose_symptoms)
         if suppose_symptoms:
             symptoms_frequency = {}
             for entry in suppose_symptoms:
-                print(entry)
                 try:
                     symptoms_frequency[entry['SymptomID']] += 1
                 except KeyError:
                     symptoms_frequency[entry['SymptomID']] = 1
-
-            print(symptoms_frequency)
             max_value = max(symptoms_frequency.values())
-            print(max_value)
             symptoms = [k for k, v in symptoms_frequency.items() if v == max_value]
-            print(symptoms)
             if symptoms:
                 variables = ','.join(['%s' for _ in range(0, len(symptoms))])
                 return database.get_all("select * "
@@ -314,8 +336,9 @@ def try_find_init_phrase(user_id, user_answer_by_words):
 
 @app.route("/test", methods=['GET'])
 def test():
+    now = time.strftime("%H:%M")
     return json.dumps(
-        "hello world",
+        now,
         ensure_ascii=False,
         indent=2
     )
