@@ -32,18 +32,18 @@ database = Database.connect()
 
 # Наборы фраз для ответов
 thanksPhrases = [
-    {'Body': 'И это все! Попробуйте снова, если у вас остались какие-то впросы'},
+    {'Body': 'И это все! Попробуйте снова, если у вас остались какие-то вопросы'},
     {'Body': 'Помогла, чем смогла, дальше дело за вами!'},
     {'Body': 'Не стоит благодарности, это моя работа.'},
     {'Body': 'Всегда рада вам помочь!'},
-    {'Body': 'На этом все! Большое спасибо, что воспользвадись мной!'},
+    {'Body': 'На этом все! Большое спасибо, что воспользовались мной!'},
     {'Body': 'Мне больше нечем вам помочь. Спасибо за ваш интерес!'},
 ]
 
 onlyYesOrNoPhrases = [
     {'Body': 'Отвечайте, пожалуйста, только Да или Нет.'},
-    {'Body': 'Отвечая Да или Нет, вы приближайетесь к результату!'},
-    {'Body': 'Не могу понять. Наверное вы не отвечаете на вопросы не так?'},
+    {'Body': 'Отвечая Да или Нет, вы приближаетесь к результату!'},
+    {'Body': 'Не могу понять. Наверное вы отвечаете на вопросы не так...'},
     {'Body': 'Пожалуйста, отвечайте только Да или Нет.'},
     {'Body': 'Да или Нет, только так и никак иначе!'},
     {'Body': 'Пожалуйста, используйте только Да и Нет в ответах.'},
@@ -52,8 +52,12 @@ onlyYesOrNoPhrases = [
 greetingsPhrases = [
     {'Body': 'Доброго времени суток! Что с вами случилось?'},
     {'Body': 'Привет! Я ваш домашний доктор, что с вами не так?'},
-    {'Body': 'Приветствую! Вас что-то  беспокоит?'},
+    {'Body': 'Приветствую! Вас что-то беспокоит?'},
     {'Body': 'Привет! С вами говорит ваш домашний советчик, что с вами случилось?'},
+]
+
+repeatQuestion = [
+    'повтори'
 ]
 
 
@@ -139,7 +143,7 @@ def handle_dialog(req, res):
                 response_text = 'Не могу понять, что с вами, попробуйте перефразировать.'
                 response_speech = 'Не могу понять, что с вами, попробуйте перефразировать.'
                 session_end = False
-                buttons = []
+                buttons = get_init_phrases(user_id)
         else:
             statement = get_symptom_statement(user_id, symptom_id, 0, '')
             if statement:
@@ -161,7 +165,16 @@ def handle_dialog(req, res):
             'нет',
         ]
 
-        if user_answer in allowed_answers:
+        if user_answer in repeatQuestion:
+            statement = get_statement_by_id(session['this_statement'])
+            buttons = [
+                {'title': 'Да', 'hide': False},
+                {'title': 'Нет', 'hide': False},
+            ]
+            session_end = False
+            response_text = statement['StatementBody']
+            response_speech = statement['StatementSpeech']
+        elif user_answer in allowed_answers:
             statement = get_symptom_statement(user_id, session['symptom_id'], session['this_statement'], user_answer)
             if statement:
                 if statement['TypeID'] == 1:
@@ -195,7 +208,11 @@ def handle_dialog(req, res):
                 buttons = []
         else:
             text = random.choice(onlyYesOrNoPhrases)
-            buttons = {}
+            buttons = [
+                        {'title': 'Да', 'hide': True},
+                        {'title': 'Нет', 'hide': True},
+                        {'title': random.choice(repeatQuestion).title(), 'hide': True},
+                    ]
             session_end = False
             response_text = text['Body']
             response_speech = text['Body']
@@ -245,6 +262,13 @@ def get_symptom_id_by_init_phrase(user_id, init_phrase):
         return symptom_id
     except TypeError:
         return False
+
+
+def get_statement_by_id(statement_id):
+    statement = database.get_item("select S.* "
+                                  "from Statements S "
+                                  "where S.StatementID = %s", (str(statement_id),))
+    return statement
 
 
 def get_symptom_statement(user_id, symptom_id, this_statement=0, user_answer=''):
