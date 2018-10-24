@@ -136,17 +136,10 @@ def handle_dialog(req, res):
                     for init_phrase in init_phrases[:2]
                 ]
             else:
-                response_on_special = get_answer_on_user_response(user_id, req['request']['nlu']['tokens'], rough_language)
-                if response_on_special:
-                    response_text = response_on_special['Body']
-                    response_speech = response_on_special['Body']
-                    session_end = False
-                    buttons = []
-                else:
-                    response_text = 'Не могу понять, что с вами, попробуйте перефразировать.'
-                    response_speech = 'Не могу понять, что с вами, попробуйте перефразировать.'
-                    session_end = False
-                    buttons = []
+                response_text = 'Не могу понять, что с вами, попробуйте перефразировать.'
+                response_speech = 'Не могу понять, что с вами, попробуйте перефразировать.'
+                session_end = False
+                buttons = []
         else:
             statement = get_symptom_statement(user_id, symptom_id, 0, '')
             if statement:
