@@ -6,13 +6,14 @@ from __future__ import unicode_literals
 import json
 import logging
 import Database
-import time
+import os
 import random
 
 # Импортируем подмодули Flask для запуска веб-сервиса.
-from flask import Flask, request
+from flask import Flask, request, send_from_directory
 app = Flask(__name__)
 
+root = os.getcwd()
 
 logging.basicConfig(filename='log.txt', level=logging.DEBUG)
 
@@ -62,7 +63,7 @@ repeatQuestion = [
 
 
 # Задаем параметры приложения Flask.
-@app.route("/", methods=['POST'])
+@app.route("/api", methods=['POST'])
 def main():
     logging.info('Start')
     request_json = request.get_json(force=True)
@@ -319,7 +320,7 @@ def save_session(user_id):
     database.query(sql)
 
 
-def try_find_init_phrase(user_id, user_answer_by_words):
+def try_find_init_phrase(user_answer_by_words):
     suppose_symptoms = []
     if len(user_answer_by_words) < 5:
         for word in user_answer_by_words:
@@ -351,12 +352,22 @@ def try_find_init_phrase(user_id, user_answer_by_words):
     return False
 
 
-@app.route("/test", methods=['GET'])
-def test():
-    now = time.strftime("%H:%M")
-    return json.dumps(
-        now,
-        ensure_ascii=False,
-        indent=2
-    )
+@app.route("/")
+def home():
+    return send_from_directory(os.path.join(root, 'static'), 'index.html')
+
+
+@app.route('/css/<path:path>')
+def send_css(path):
+    return send_from_directory(os.path.join(root, 'static', 'css'), path)
+
+
+@app.route('/js/<path:path>')
+def send_js(path):
+    return send_from_directory(os.path.join(root, 'static', 'js'), path)
+
+
+@app.route('/image/<path:path>')
+def send_image(path):
+    return send_from_directory(os.path.join(root, 'static', 'image'), path)
 
